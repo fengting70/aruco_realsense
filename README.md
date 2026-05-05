@@ -4,6 +4,8 @@ Detect ArUco markers in real-time from an Intel RealSense camera stream,
 estimate each marker's 6-DoF pose (rotation + translation), and overlay
 3D axes directly on the video.
 
+**OpenCV 4.8+ compatible** — migrated from deprecated ArUco API.
+
 ```
 ┌──────────────────────────────────────┐
 │  [RGB video]                         │
@@ -15,6 +17,38 @@ estimate each marker's 6-DoF pose (rotation + translation), and overlay
 │         ↑ X,Y,Z axes                 │
 └──────────────────────────────────────┘
 ```
+
+---
+
+## Changelog
+
+### v1.1 — Migrate to OpenCV 4.8+ ArUco API (2026-05-05)
+
+OpenCV 4.8+ deprecated the legacy `cv2.aruco` module functions. This version
+migrates to the new API so the code works with current and future OpenCV
+releases without deprecation warnings.
+
+| Deprecated (OpenCV < 4.8) | New (OpenCV ≥ 4.8) | File(s) |
+|---|---|---|
+| `cv2.aruco.Dictionary_get(DICT_6X6_250)` | `cv2.aruco.getPredefinedDictionary(DICT_6X6_250)` | `aruco_realsense.py` |
+| `cv2.aruco.DetectorParameters_create()` | `cv2.aruco.DetectorParameters()` | `aruco_realsense.py` |
+| `cv2.aruco.ArucoDetector(dict, params)` | `cv2.aruco.ArucoDetector(dict, params)` (new class-based API) | `aruco_realsense.py` |
+| `cv2.aruco.estimatePoseSingleMarkers(corners, …)` | Custom `my_estimatePoseSingleMarkers()` via `cv2.solvePnP()` | `aruco_realsense.py` |
+| `cv2.aruco.drawAxes(img, mtx, dist, rvec, tvec, len)` | `cv2.drawFrameAxes(img, mtx, dist, rvec, tvec, len)` | `aruco_realsense.py` |
+| `cv2.aruco.drawMarker(dict, id, px)` | `dict.generateImageMarker(id, px)` | README marker generator |
+| `cv2.aruco.imshow(name, img)` | `cv2.imshow(name, img)` | N/A (general OpenCV) |
+
+**Key implementation detail:** `cv2.aruco.estimatePoseSingleMarkers()` was
+removed entirely in OpenCV 4.8+. The replacement `my_estimatePoseSingleMarkers()`
+wraps `cv2.solvePnP()` with `SOLVEPNP_IPPE_SQUARE` — a fast closed-form solver
+for square markers — and produces identical output (rvecs, tvecs).
+
+### v1.0 — Initial release
+
+- RealSense RGB streaming with ArUco marker detection
+- 6-DoF pose estimation with 3D axes overlay
+- Camera calibration support
+- Screenshot capture and fullscreen toggle
 
 ---
 
@@ -342,15 +376,20 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 pip install --force-reinstall pyrealsense2
 ```
 
-### "cv2.aruco is not found"
+### "cv2.aruco is not found" or "AttributeError: module 'cv2.aruco' has no attribute ..."
 
-Make sure you're using `opencv-python` (not `opencv-contrib-python` —
+Make sure you're using `opencv-python>=4.8.0` (not `opencv-contrib-python` —
 ArUco is included in the main package since 4.x):
 
 ```bash
 pip uninstall opencv-contrib-python   # if installed
 pip install opencv-python>=4.8.0
 ```
+
+If you see errors about deprecated functions like
+`estimatePoseSingleMarkers`, `drawAxes`, `DetectorParameters_create`,
+or `Dictionary_get` — these were all removed in OpenCV 4.8+.
+See the [Changelog](#v11--migrate-to-opencv-48-aruco-api-2026-05-05) above for the replacements.
 
 ### Markers not detected
 
@@ -371,40 +410,42 @@ pip install opencv-python>=4.8.0
 ## How It Works
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────────────┐
-│  RealSense  │────►│  BGR Frame   │────►│  cv2.aruco.      │
-│  Camera     │     │  (640x480)   │     │  detectMarkers() │
-└─────────────┘     └──────────────┘     └────────┬─────────┘
+┌─────────────┐     ┌──────────────┐     ┌──────────────────────┐
+│  RealSense  │────►│  BGR Frame   │────►│  ArucoDetector       │
+│  Camera     │     │  (640x480)   │     │  .detectMarkers()    │
+└─────────────┘     └──────────────┘     └────────┬─────────────┘
                                                    │
                                           corners + ids
                                                    │
-                                          ┌────────▼─────────┐
-                                          │ estimatePose     │
-                                          │   Markers()      │
-                                          └────────┬─────────┘
+                                          ┌────────▼─────────────┐
+                                          │ my_estimatePose      │
+                                          │   SingleMarkers()    │
+                                          │  (via solvePnP)      │
+                                          └────────┬─────────────┘
                                                    │
                                           rvecs + tvecs
                                                    │
-                                          ┌────────▼─────────┐
-                                          │ drawDetected     │
-                                          │   Markers()      │
-                                          │   drawAxes()     │
-                                          └────────┬─────────┘
+                                          ┌────────▼─────────────┐
+                                          │ drawDetected         │
+                                          │   Markers()          │
+                                          │   drawFrameAxes()    │
+                                          └────────┬─────────────┘
                                                    │
-                                          ┌────────▼─────────┐
-                                          │  Annotated Frame │
-                                          │  → imshow()      │
-                                          └──────────────────┘
+                                          ┌────────▼─────────────┐
+                                          │  Annotated Frame     │
+                                          │  → imshow()          │
+                                          └──────────────────────┘
 ```
 
 1. **Capture:** `pyrealsense2` streams BGR frames from the RGB sensor.
-2. **Detect:** `cv2.aruco.detectMarkers()` finds marker corners and IDs
-   in the grayscale frame.
-3. **Pose:** `cv2.aruco.estimatePoseMarkers()` uses PnP to solve for
-   each marker's rotation (`rvec`) and translation (`tvec`) relative
-   to the camera.
-4. **Draw:** Green outlines + RGB axes (X=red, Y=green, Z=blue) are
-   overlaid on the frame.
+2. **Detect:** `cv2.aruco.ArucoDetector.detectMarkers()` finds marker
+   corners and IDs in the grayscale frame (new class-based API).
+3. **Pose:** Custom `my_estimatePoseSingleMarkers()` wraps
+   `cv2.solvePnP()` with `SOLVEPNP_IPPE_SQUARE` — a fast closed-form
+   solver — to compute each marker's rotation (`rvec`) and translation
+   (`tvec`) relative to the camera.
+4. **Draw:** `cv2.aruco.drawDetectedMarkers()` draws green outlines;
+   `cv2.drawFrameAxes()` overlays RGB axes (X=red, Y=green, Z=blue).
 
 ---
 
