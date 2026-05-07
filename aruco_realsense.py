@@ -71,9 +71,6 @@ def build_parser():
         "--calib-file", type=str, default=None,
         help="Path to camera calibration .npz file (cameraMatrix + distCoeffs). "
              "If omitted, intrinsics are read live from the RealSense sensor.")
-    parser.add_argument(
-        "--depth", action="store_true",
-        help="Enable depth-colour overlay (slower)")
     return parser
 
 
@@ -201,16 +198,14 @@ def main():
     print(f"[Config] Dictionary : {args.dictionary}")
     print(f"[Config] Marker size: {args.marker_size} m")
     print(f"[Config] Resolution : {args.width}x{args.height} @ {args.fps} fps")
-    print(f"[Config] Depth : {args.depth}")
 
     # ---- RealSense pipeline ----
     pipeline = rs.pipeline()
     cfg = rs.config()
     cfg.enable_stream(rs.stream.color, args.width, args.height,
                       rs.format.bgr8, args.fps)
-    if args.depth:
-        cfg.enable_stream(rs.stream.depth, args.width, args.height,
-                          rs.format.z16, args.fps)
+    cfg.enable_stream(rs.stream.depth, args.width, args.height,
+                      rs.format.z16, args.fps)
 
     try:
         profile = pipeline.start(cfg)
@@ -232,6 +227,9 @@ def main():
         camera_matrix, dist_coeffs = intrinsics_from_calib_file(args.calib_file)
         print(f"[Camera] Loaded calibration from {args.calib_file}")
 
+    # Align depth frame to color frame (see align-depth2color.py)
+    align = rs.align(rs.stream.color)
+
     # ---- UI window ----
     win_name = "RealSense — ArUco Pose Estimation"
     cv2.namedWindow(win_name, cv2.WINDOW_AUTOSIZE)
@@ -239,19 +237,30 @@ def main():
     prev_time = cv2.getTickCount()
     frame_count = 0
     screenshot_idx = 0
+    depth_overlay = False
 
     print("[INFO]  Press 'q' or ESC to quit  |  's' to save screenshot")
     print("       Press 'f' to toggle fullscreen")
+    print("       Press 'd' to toggle depth overlay")
     print("=" * 60)
 
     try:
         while True:
             frames = pipeline.wait_for_frames()
-            color_frame = frames.get_color_frame()
+            # Align depth frame to color frame
+            aligned_frames = align.process(frames)
+            color_frame = aligned_frames.get_color_frame()
             if not color_frame:
                 continue
 
             frame = np.asanyarray(color_frame.data)
+
+            # Get aligned depth frame if overlay is on
+            depth_image = None
+            if depth_overlay:
+                aligned_depth_frame = aligned_frames.get_depth_frame()
+                if aligned_depth_frame:
+                    depth_image = np.asanyarray(aligned_depth_frame.get_data())
 
             # ---- detect & pose ----
             corners, ids, rvecs, tvecs = detect_and_estimate(
@@ -275,7 +284,15 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
             # ---- display ----
-            cv2.imshow(win_name, frame)
+            display = frame
+            if depth_overlay and depth_image is not None:
+                # Blend depth colormap onto color frame (see align-depth2color.py)
+                depth_colormap = cv2.applyColorMap(
+                    cv2.convertScaleAbs(depth_image, alpha=0.03),
+                    cv2.COLORMAP_JET)
+                display = cv2.addWeighted(frame, 0.55, depth_colormap, 0.45, 0)
+            
+            cv2.imshow(win_name, display)
 
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
@@ -288,11 +305,14 @@ def main():
                 else:
                     cv2.setWindowProperty(win_name, cv2.WND_PROP_FULLSCREEN,
                                           cv2.WINDOW_FULLSCREEN)
+            elif key == ord("d"):
+                depth_overlay = not depth_overlay
+                print(f"[INFO] Depth overlay: {'ON' if depth_overlay else 'OFF'}")
             elif key == ord("s"):
                 screenshot_idx += 1
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 path = f"screenshot_{ts}_{screenshot_idx:03d}.png"
-                cv2.imwrite(path, frame)
+                cv2.imwrite(path, display)
                 print(f"[+] Saved {path}")
 
     except KeyboardInterrupt:
