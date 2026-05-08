@@ -8,19 +8,36 @@ estimate each marker's 6-DoF pose (rotation + translation), and overlay
 
 ```
 ┌──────────────────────────────────────┐
-│  [RGB video]                         │
+│  [RGB + Depth overlay]               │
 │                                      │
 │      ┌───────┐    ┌───────┐          │
 │      │ ArUco │    │ ArUco │          │
 │      │  #3   │───►│  #7   │          │
 │      └───────┘    └───────┘          │
 │         ↑ X,Y,Z axes                 │
+│                                      │
+│  [Depth-colormap blended overlay]    │
+│   (press 'd' to toggle)              │
 └──────────────────────────────────────┘
 ```
 
 ---
 
 ## Changelog
+
+### v1.2 — Depth-colormap overlay; removed `--depth` CLI flag (2026-05-08)
+
+The depth stream is now always captured and aligned to the color stream.
+Instead of a CLI flag (`--depth`), depth visualization is toggled at
+runtime by pressing **`d`** in the OpenCV window.
+
+| Change | Detail |
+|--------|--------|
+| `--depth` CLI flag | **Removed** — depth is always on; overlay is toggled with `d` key |
+| Depth pipeline | `rs.align(rs.stream.color)` aligns depth to color every frame |
+| Depth overlay | `cv2.applyColorMap(COLORMAP_JET)` + 30/70 blend with color frame |
+| Status text | Frame displays `Depth overlay: ON/OFF` inline |
+| Keyboard | `d` — toggle depth-colormap overlay on/off |
 
 ### v1.1 — Migrate to OpenCV 4.8+ ArUco API (2026-05-05)
 
@@ -210,12 +227,13 @@ set size, and download the PDF.
 python3 aruco_realsense.py
 ```
 
-This starts the RealSense RGB camera, detects ArUco markers (`6x6_250`
+This starts the RealSense RGB + depth camera, detects ArUco markers (`6x6_250`
 dictionary, 5 cm square size by default), and draws:
 
 - **Green outlines** around each detected marker
 - **RGB 3D axes** (red=X, green=Y, blue=Z) showing the marker's pose
 - **Marker ID** and **translation vector** as text labels
+- **FPS counter** and **depth overlay status** in the frame
 
 ### Custom marker size
 
@@ -242,6 +260,7 @@ python3 aruco_realsense.py --calib-file camera_calibration.npz
 | Key | Action |
 |-----|--------|
 | `q` / `ESC` | Quit |
+| `d` | Toggle depth-colormap overlay |
 | `f` | Toggle fullscreen |
 | `s` | Save screenshot to `screenshot_YYYYMMDD_HHMMSS_NNN.png` |
 
@@ -257,7 +276,6 @@ usage: aruco_realsense.py [-h]
                           [--height HEIGHT]
                           [--fps FPS]
                           [--calib-file FILE]
-                          [--depth]
 
 options:
   -h, --help            Show this help message
@@ -267,8 +285,11 @@ options:
   --height HEIGHT       RGB stream height (default: 480)
   --fps FPS             Capture FPS (default: 30)
   --calib-file FILE     Path to calibration .npz file
-  --depth               Enable depth-colour overlay
 ```
+
+> **Note:** The `--depth` option has been removed in v1.2. Depth stream is
+> always enabled and aligned to color. Toggle the depth-colormap overlay at
+> runtime by pressing **`d`** in the OpenCV window.
 
 ---
 
@@ -413,39 +434,53 @@ See the [Changelog](#v11--migrate-to-opencv-48-aruco-api-2026-05-05) above for t
 ┌─────────────┐     ┌──────────────┐     ┌──────────────────────┐
 │  RealSense  │────►│  BGR Frame   │────►│  ArucoDetector       │
 │  Camera     │     │  (640x480)   │     │  .detectMarkers()    │
-└─────────────┘     └──────────────┘     └────────┬─────────────┘
-                                                   │
-                                          corners + ids
-                                                   │
-                                          ┌────────▼─────────────┐
-                                          │ my_estimatePose      │
-                                          │   SingleMarkers()    │
-                                          │  (via solvePnP)      │
-                                          └────────┬─────────────┘
-                                                   │
-                                          rvecs + tvecs
-                                                   │
-                                          ┌────────▼─────────────┐
-                                          │ drawDetected         │
-                                          │   Markers()          │
-                                          │   drawFrameAxes()    │
-                                          └────────┬─────────────┘
-                                                   │
-                                          ┌────────▼─────────────┐
-                                          │  Annotated Frame     │
-                                          │  → imshow()          │
-                                          └──────────────────────┘
+├─────────────┤     └──────────────┘     └────────┬─────────────┘
+│  Depth +    │
+│  Color      │          ┌──────────┐
+└─────────────┘          │  Align   │
+                         │  depth→  │
+                         │  color   │
+                         └────┬─────┘
+                              │
+                              │  aligned depth
+                              │
+                     ┌────────▼─────────────┐
+                     │ my_estimatePose      │
+                     │   SingleMarkers()    │
+                     │  (via solvePnP)      │
+                     └────────┬─────────────┘
+                              │
+                     rvecs + tvecs
+                              │
+                     ┌────────▼─────────────┐
+                     │ drawDetected         │
+                     │   Markers()          │
+                     │   drawFrameAxes()    │
+                     └────────┬─────────────┘
+                              │
+                     ┌────────▼─────────────┐
+                     │  Annotated Frame     │
+                     │  + depth-colormap    │
+                     │  blend (press 'd')   │
+                     │  → imshow()          │
+                     └──────────────────────┘
 ```
 
-1. **Capture:** `pyrealsense2` streams BGR frames from the RGB sensor.
-2. **Detect:** `cv2.aruco.ArucoDetector.detectMarkers()` finds marker
+1. **Capture:** `pyrealsense2` streams BGR frames from the RGB sensor and
+   depth frames from the depth sensor.
+2. **Align:** `rs.align(rs.stream.color)` maps each depth pixel to its
+   corresponding color pixel — depth and RGB are now spatially registered.
+3. **Detect:** `cv2.aruco.ArucoDetector.detectMarkers()` finds marker
    corners and IDs in the grayscale frame (new class-based API).
-3. **Pose:** Custom `my_estimatePoseSingleMarkers()` wraps
+4. **Pose:** Custom `my_estimatePoseSingleMarkers()` wraps
    `cv2.solvePnP()` with `SOLVEPNP_IPPE_SQUARE` — a fast closed-form
    solver — to compute each marker's rotation (`rvec`) and translation
    (`tvec`) relative to the camera.
-4. **Draw:** `cv2.aruco.drawDetectedMarkers()` draws green outlines;
+5. **Draw:** `cv2.aruco.drawDetectedMarkers()` draws green outlines;
    `cv2.drawFrameAxes()` overlays RGB axes (X=red, Y=green, Z=blue).
+6. **Depth overlay (optional, `d` key):** When enabled, the aligned depth
+   frame is converted to a colormap (`cv2.applyColorMap(..., COLORMAP_JET)`)
+   and blended with the annotated color frame at a 30/70 ratio.
 
 ---
 
