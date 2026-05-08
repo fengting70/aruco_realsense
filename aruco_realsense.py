@@ -304,13 +304,19 @@ def main():
 
             cv2.imshow(win_name, display)
 
-            # Set mouse callback after window is created (avoids NULL handler error)
+            # Process window events so the window is fully created
+            key = cv2.waitKey(1) & 0xFF
+
+            # Set mouse callback only after window is ready (avoids NULL handler)
             if not mouse_callback_set:
                 def on_mouse(event, x, y, flags, param):
                     nonlocal mouse_x, mouse_y
                     mouse_x, mouse_y = x, y
-                cv2.setMouseCallback(win_name, on_mouse)
-                mouse_callback_set = True
+                try:
+                    cv2.setMouseCallback(win_name, on_mouse)
+                    mouse_callback_set = True
+                except cv2.error:
+                    pass  # Window not ready yet; will retry next frame
 
             # ---- mouse cursor info (second HUD line) ----
             if 0 <= mouse_y < display.shape[0] and 0 <= mouse_x < display.shape[1]:
@@ -321,7 +327,6 @@ def main():
                 cv2.putText(display, cursor_info, (10, 55),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
 
-            key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
                 break
             elif key == ord("f"):
