@@ -241,12 +241,7 @@ def main():
 
     # Mouse tracking state
     mouse_x, mouse_y = -1, -1
-
-    def on_mouse(event, x, y, flags, param):
-        nonlocal mouse_x, mouse_y
-        mouse_x, mouse_y = x, y
-
-    cv2.setMouseCallback(win_name, on_mouse)
+    mouse_callback_set = False
 
     print("[INFO]  Press 'q' or ESC to quit  |  's' to save screenshot")
     print("       Press 'f' to toggle fullscreen")
@@ -298,16 +293,6 @@ def main():
             cv2.putText(frame, status, (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-            # ---- mouse cursor info ----
-            if 0 <= mouse_y < frame.shape[0] and 0 <= mouse_x < frame.shape[1]:
-                rgb_val = frame[mouse_y, mouse_x]  # BGR
-                cursor_info = f"({mouse_x},{mouse_y}) RGB=({rgb_val[2]},{rgb_val[1]},{rgb_val[0]})"
-                if depth_overlay and depth_image is not None:
-                    depth_mm = int(depth_image[mouse_y, mouse_x])
-                    cursor_info += f"  Depth={depth_mm}mm"
-                cv2.putText(frame, cursor_info, (10, frame.shape[0] - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-
             # ---- display ----
             display = frame
             if depth_overlay and depth_image is not None:
@@ -316,8 +301,25 @@ def main():
                     cv2.convertScaleAbs(depth_image, alpha=0.03),
                     cv2.COLORMAP_JET)
                 display = cv2.addWeighted(frame, 0.30, depth_colormap, 0.70, 0)
-            
+
             cv2.imshow(win_name, display)
+
+            # Set mouse callback after window is created (avoids NULL handler error)
+            if not mouse_callback_set:
+                def on_mouse(event, x, y, flags, param):
+                    nonlocal mouse_x, mouse_y
+                    mouse_x, mouse_y = x, y
+                cv2.setMouseCallback(win_name, on_mouse)
+                mouse_callback_set = True
+
+            # ---- mouse cursor info (second HUD line) ----
+            if 0 <= mouse_y < display.shape[0] and 0 <= mouse_x < display.shape[1]:
+                cursor_info = f"({mouse_x},{mouse_y})"
+                if depth_overlay and depth_image is not None:
+                    depth_mm = int(depth_image[mouse_y, mouse_x])
+                    cursor_info += f"  |  Depth={depth_mm}mm"
+                cv2.putText(display, cursor_info, (10, 55),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
 
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
