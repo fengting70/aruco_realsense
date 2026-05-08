@@ -11,7 +11,7 @@ Usage:
 
 Keyboard:
     q / ESC   Quit
-    c         Toggle colour overlay (depth)
+    d         Toggle depth-colormap overlay
     f         Toggle fullscreen
     s         Save screenshot
 """
