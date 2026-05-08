@@ -25,6 +25,18 @@ estimate each marker's 6-DoF pose (rotation + translation), and overlay
 
 ## Changelog
 
+### v1.3 — Mouse cursor info with depth readout (2026-05-08)
+
+Mouse cursor tracking now displays pixel coordinates and RGB values at the
+cursor position in the bottom-left corner of the frame. When the depth
+overlay is enabled (`d` key), the depth value in millimeters is also shown.
+
+| Change | Detail |
+|--------|--------|
+| Mouse callback | `cv2.setMouseCallback()` tracks cursor position |
+| Cursor info | `(x,y) RGB=(R,G,B)` shown at bottom-left of frame |
+| Depth readout | When overlay is ON: `Depth=Nmm` appended to cursor info |
+
 ### v1.2 — Depth-colormap overlay; removed `--depth` CLI flag (2026-05-08)
 
 The depth stream is now always captured and aligned to the color stream.
@@ -263,6 +275,16 @@ python3 aruco_realsense.py --calib-file camera_calibration.npz
 | `d` | Toggle depth-colormap overlay |
 | `f` | Toggle fullscreen |
 | `s` | Save screenshot to `screenshot_YYYYMMDD_HHMMSS_NNN.png` |
+
+### Mouse cursor info
+
+Move your mouse over the OpenCV window to see:
+
+- **Pixel coordinates** `(x,y)` at the cursor position
+- **RGB values** of the pixel under the cursor
+- **Depth value** in millimeters (only when depth overlay is ON via `d` key)
+
+The info appears at the bottom-left corner of the frame.
 
 ---
 

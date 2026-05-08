@@ -239,6 +239,15 @@ def main():
     screenshot_idx = 0
     depth_overlay = False
 
+    # Mouse tracking state
+    mouse_x, mouse_y = -1, -1
+
+    def on_mouse(event, x, y, flags, param):
+        nonlocal mouse_x, mouse_y
+        mouse_x, mouse_y = x, y
+
+    cv2.setMouseCallback(win_name, on_mouse)
+
     print("[INFO]  Press 'q' or ESC to quit  |  's' to save screenshot")
     print("       Press 'f' to toggle fullscreen")
     print("       Press 'd' to toggle depth overlay")
@@ -288,6 +297,16 @@ def main():
 
             cv2.putText(frame, status, (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            # ---- mouse cursor info ----
+            if 0 <= mouse_y < frame.shape[0] and 0 <= mouse_x < frame.shape[1]:
+                rgb_val = frame[mouse_y, mouse_x]  # BGR
+                cursor_info = f"({mouse_x},{mouse_y}) RGB=({rgb_val[2]},{rgb_val[1]},{rgb_val[0]})"
+                if depth_overlay and depth_image is not None:
+                    depth_mm = int(depth_image[mouse_y, mouse_x])
+                    cursor_info += f"  Depth={depth_mm}mm"
+                cv2.putText(frame, cursor_info, (10, frame.shape[0] - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
             # ---- display ----
             display = frame
