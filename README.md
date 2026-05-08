@@ -8,7 +8,7 @@ estimate each marker's 6-DoF pose (rotation + translation), and overlay
 
 ```
 ┌──────────────────────────────────────┐
-│  [RGB + Depth overlay]               │
+│  [RGB + Depth-colormap overlay]       │
 │                                      │
 │      ┌───────┐    ┌───────┐          │
 │      │ ArUco │    │ ArUco │          │
@@ -16,8 +16,8 @@ estimate each marker's 6-DoF pose (rotation + translation), and overlay
 │      └───────┘    └───────┘          │
 │         ↑ X,Y,Z axes                 │
 │                                      │
-│  [Depth-colormap blended overlay]    │
-│   (press 'd' to toggle)              │
+│  FPS: 30.0  |  Markers: 3, 7         │
+│  (256,192)  |  Depth=450mm           │
 └──────────────────────────────────────┘
 ```
 
@@ -25,17 +25,29 @@ estimate each marker's 6-DoF pose (rotation + translation), and overlay
 
 ## Changelog
 
+### v1.4 — Fix cursor info not appearing (2026-05-08)
+
+Cursor info `(x,y)` / `Depth=Nmm` was drawn on `display` *after* `cv2.imshow()`,
+so it never appeared on the frame shown to the user. Moved the drawing step
+*before* `imshow()` — mouse coordinates from the previous frame's `waitKey()`
+are used, giving correct one-frame-lagged display.
+
+| Change | Detail |
+|--------|--------|
+| Cursor info timing | Draw cursor info **before** `cv2.imshow()` so it appears on the displayed frame |
+| Guard | Added `mouse_callback_set` check so cursor info only appears after callback is registered |
+
 ### v1.3 — Mouse cursor info with depth readout (2026-05-08)
 
-Mouse cursor tracking now displays pixel coordinates and RGB values at the
-cursor position in the bottom-left corner of the frame. When the depth
-overlay is enabled (`d` key), the depth value in millimeters is also shown.
+Mouse cursor tracking now displays pixel coordinates at the cursor position
+in the HUD. When the depth overlay is enabled (`d` key), the depth value
+in millimeters is also shown inline.
 
 | Change | Detail |
 |--------|--------|
 | Mouse callback | `cv2.setMouseCallback()` tracks cursor position |
-| Cursor info | `(x,y) RGB=(R,G,B)` shown at bottom-left of frame |
-| Depth readout | When overlay is ON: `Depth=Nmm` appended to cursor info |
+| Cursor info | `(x,y)` shown on second HUD line (y=55) |
+| Depth readout | When overlay is ON: `Depth=Nmm` appended inline |
 
 ### v1.2 — Depth-colormap overlay; removed `--depth` CLI flag (2026-05-08)
 
@@ -281,10 +293,9 @@ python3 aruco_realsense.py --calib-file camera_calibration.npz
 Move your mouse over the OpenCV window to see:
 
 - **Pixel coordinates** `(x,y)` at the cursor position
-- **RGB values** of the pixel under the cursor
 - **Depth value** in millimeters (only when depth overlay is ON via `d` key)
 
-The info appears at the bottom-left corner of the frame.
+The info appears on the second HUD line of the frame.
 
 ---
 
@@ -457,41 +468,34 @@ See the [Changelog](#v11--migrate-to-opencv-48-aruco-api-2026-05-05) above for t
 │  RealSense  │────►│  BGR Frame   │────►│  ArucoDetector       │
 │  Camera     │     │  (640x480)   │     │  .detectMarkers()    │
 ├─────────────┤     └──────────────┘     └────────┬─────────────┘
-│  Depth +    │
-│  Color      │          ┌──────────┐
-└─────────────┘          │  Align   │
-                         │  depth→  │
-                         │  color   │
-                         └────┬─────┘
-                              │
-                              │  aligned depth
-                              │
-                     ┌────────▼─────────────┐
-                     │ my_estimatePose      │
-                     │   SingleMarkers()    │
-                     │  (via solvePnP)      │
-                     └────────┬─────────────┘
-                              │
-                     rvecs + tvecs
-                              │
-                     ┌────────▼─────────────┐
-                     │ drawDetected         │
-                     │   Markers()          │
-                     │   drawFrameAxes()    │
-                     └────────┬─────────────┘
-                              │
-                     ┌────────▼─────────────┐
-                     │  Annotated Frame     │
-                     │  + depth-colormap    │
-                     │  blend (press 'd')   │
-                     │  → imshow()          │
-                     └──────────────────────┘
+│  Depth +    │           ┌──────────┐
+│  Color      │──────────►│  Align   │
+└─────────────┘           │  depth→  │
+                          │  color   │
+                          └────┬─────┘
+                               │
+          ┌────────────────────┼──────────────┐
+          │                    │              │
+          │              rvecs/tvecs         │
+          │              + depth             │
+          │                    │              │
+   ┌──────▼──────────────┐  ┌─▼──────────┐  │
+   │ drawDetectedMarkers │  │ solvePnP   │  │
+   │ drawFrameAxes       │  │ (pose)     │  │
+   └──────┬──────────────┘  └────────────┘  │
+          │                                  │
+   ┌──────▼──────────────────────────────────┤
+   │  Annotated Frame + depth-colormap       │
+   │  blend (toggle 'd', always aligned)     │
+   │  + mouse cursor info (x,y) / Depth=Nmm │
+   │  → imshow()                             │
+   └─────────────────────────────────────────┘
 ```
 
 1. **Capture:** `pyrealsense2` streams BGR frames from the RGB sensor and
    depth frames from the depth sensor.
 2. **Align:** `rs.align(rs.stream.color)` maps each depth pixel to its
-   corresponding color pixel — depth and RGB are now spatially registered.
+   corresponding color pixel — depth and RGB are always spatially registered.
 3. **Detect:** `cv2.aruco.ArucoDetector.detectMarkers()` finds marker
    corners and IDs in the grayscale frame (new class-based API).
 4. **Pose:** Custom `my_estimatePoseSingleMarkers()` wraps
@@ -500,9 +504,11 @@ See the [Changelog](#v11--migrate-to-opencv-48-aruco-api-2026-05-05) above for t
    (`tvec`) relative to the camera.
 5. **Draw:** `cv2.aruco.drawDetectedMarkers()` draws green outlines;
    `cv2.drawFrameAxes()` overlays RGB axes (X=red, Y=green, Z=blue).
-6. **Depth overlay (optional, `d` key):** When enabled, the aligned depth
-   frame is converted to a colormap (`cv2.applyColorMap(..., COLORMAP_JET)`)
-   and blended with the annotated color frame at a 30/70 ratio.
+6. **Depth-colormap overlay:** The aligned depth frame is converted to a
+   colormap (`cv2.applyColorMap(..., COLORMAP_JET)`) and blended with the
+   annotated color frame at a 30/70 ratio. Toggle with `d` key.
+7. **Mouse cursor info:** Pixel coordinates `(x,y)` shown on the second HUD
+   line. When depth overlay is ON, `Depth=Nmm` is also displayed.
 
 ---
 
