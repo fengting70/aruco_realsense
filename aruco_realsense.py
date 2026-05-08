@@ -280,6 +280,12 @@ def main():
                 status += f"  |  Markers: {', '.join(map(str, ids.flatten()))}"
             else:
                 status += "  |  No markers"
+            
+            if depth_overlay and depth_image is not None:
+                status += "  |  Depth overlay: ON"
+            else:
+                status += "  |  Depth overlay: OFF"
+
             cv2.putText(frame, status, (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
@@ -290,7 +296,7 @@ def main():
                 depth_colormap = cv2.applyColorMap(
                     cv2.convertScaleAbs(depth_image, alpha=0.03),
                     cv2.COLORMAP_JET)
-                display = cv2.addWeighted(frame, 0.55, depth_colormap, 0.45, 0)
+                display = cv2.addWeighted(frame, 0.30, depth_colormap, 0.70, 0)
             
             cv2.imshow(win_name, display)
 
@@ -307,7 +313,7 @@ def main():
                                           cv2.WINDOW_FULLSCREEN)
             elif key == ord("d"):
                 depth_overlay = not depth_overlay
-                print(f"[INFO] Depth overlay: {'ON' if depth_overlay else 'OFF'}")
+                # print(f"[INFO] Depth overlay: {'ON' if depth_overlay else 'OFF'}")
             elif key == ord("s"):
                 screenshot_idx += 1
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
