@@ -302,12 +302,22 @@ def main():
                     cv2.COLORMAP_JET)
                 display = cv2.addWeighted(frame, 0.30, depth_colormap, 0.70, 0)
 
+            # ---- mouse cursor info (second HUD line) ----
+            # Draw BEFORE imshow so it appears on the displayed frame.
+            # mouse_x/mouse_y are updated by the callback during the PREVIOUS waitKey().
+            if mouse_callback_set and 0 <= mouse_y < display.shape[0] and 0 <= mouse_x < display.shape[1]:
+                cursor_info = f"({mouse_x},{mouse_y})"
+                if depth_overlay and depth_image is not None:
+                    depth_mm = int(depth_image[mouse_y, mouse_x])
+                    cursor_info += f"  |  Depth={depth_mm}mm"
+                cv2.putText(display, cursor_info, (10, 55),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
+
             cv2.imshow(win_name, display)
 
-            # Process window events so the window is fully created
+            # Process window events — updates mouse callback on first frame
             key = cv2.waitKey(1) & 0xFF
 
-            # Set mouse callback only after window is ready (avoids NULL handler)
             if not mouse_callback_set:
                 def on_mouse(event, x, y, flags, param):
                     nonlocal mouse_x, mouse_y
@@ -316,16 +326,7 @@ def main():
                     cv2.setMouseCallback(win_name, on_mouse)
                     mouse_callback_set = True
                 except cv2.error:
-                    pass  # Window not ready yet; will retry next frame
-
-            # ---- mouse cursor info (second HUD line) ----
-            if 0 <= mouse_y < display.shape[0] and 0 <= mouse_x < display.shape[1]:
-                cursor_info = f"({mouse_x},{mouse_y})"
-                if depth_overlay and depth_image is not None:
-                    depth_mm = int(depth_image[mouse_y, mouse_x])
-                    cursor_info += f"  |  Depth={depth_mm}mm"
-                cv2.putText(display, cursor_info, (10, 55),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
+                    pass
 
             if key in (ord("q"), 27):
                 break
