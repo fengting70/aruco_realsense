@@ -229,19 +229,25 @@ def main():
 
     # Align depth frame to color frame (see align-depth2color.py)
     align = rs.align(rs.stream.color)
+   
+    # Mouse tracking state
+    mouse_x, mouse_y = -1, -1
+    
+    # mouse callback function
+    def on_mouse(event, x, y, flags, param):
+        nonlocal mouse_x, mouse_y
+        if (event == cv2.EVENT_MOUSEMOVE):
+            mouse_x, mouse_y = x, y
 
     # ---- UI window ----
-    win_name = "RealSense — ArUco Pose Estimation"
+    win_name = "RealSense - ArUco Pose Estimation"
     cv2.namedWindow(win_name, cv2.WINDOW_AUTOSIZE)
+    cv2.setMouseCallback(win_name, on_mouse)
 
     prev_time = cv2.getTickCount()
     frame_count = 0
     screenshot_idx = 0
     depth_overlay = False
-
-    # Mouse tracking state
-    mouse_x, mouse_y = -1, -1
-    mouse_callback_set = False
 
     print("[INFO]  Press 'q' or ESC to quit  |  's' to save screenshot")
     print("       Press 'f' to toggle fullscreen")
@@ -305,7 +311,7 @@ def main():
             # ---- mouse cursor info (second HUD line) ----
             # Draw BEFORE imshow so it appears on the displayed frame.
             # mouse_x/mouse_y are updated by the callback during the PREVIOUS waitKey().
-            if mouse_callback_set and 0 <= mouse_y < display.shape[0] and 0 <= mouse_x < display.shape[1]:
+            if 0 <= mouse_y < display.shape[0] and 0 <= mouse_x < display.shape[1]:
                 cursor_info = f"({mouse_x},{mouse_y})"
                 if depth_overlay and depth_image is not None:
                     depth_mm = int(depth_image[mouse_y, mouse_x])
@@ -317,16 +323,6 @@ def main():
 
             # Process window events — updates mouse callback on first frame
             key = cv2.waitKey(1) & 0xFF
-
-            if not mouse_callback_set:
-                def on_mouse(event, x, y, flags, param):
-                    nonlocal mouse_x, mouse_y
-                    mouse_x, mouse_y = x, y
-                try:
-                    cv2.setMouseCallback(win_name, on_mouse)
-                    mouse_callback_set = True
-                except cv2.error:
-                    pass
 
             if key in (ord("q"), 27):
                 break
